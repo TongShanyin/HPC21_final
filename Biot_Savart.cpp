@@ -3,13 +3,15 @@
 #include <stdlib.h>
 #include "utils.h"
 
+#define rand01() ((double)rand()/RAND_MAX)
+
 typedef struct { double x, y, z;} Vec3d;
 
 void randomizeVec3d(Vec3d *data, int n) {
   for (int i = 0; i < n; i++) {
-    data[i].x = randn();
-    data[i].y = randn();
-    data[i].z = randn();
+    data[i].x = rand01();
+    data[i].y = rand01();
+    data[i].z = rand01();
   }
 }
 
@@ -26,7 +28,7 @@ void biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *ga
             double diff_z = points[i].z - gamma[j].z;
             // compute distance between target and source
             double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
-            double norm_diff = sqrt(diff);
+            double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance
             B[i].x += invDist3 * (dgamma_by_dphi[j].y * diff_z - dgamma_by_dphi[j].z * diff_y);
@@ -40,9 +42,9 @@ void biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *ga
 int main(const int argc, const char** argv) {
 
   // set values
-  int ntargets = 10000;
-  int nsources = 20000;
-  int repeat = 100;
+  int ntargets = 100;
+  int nsources = 200;
+  int repeat = 1;
   if (argc > 2) {
     ntargets = atoi(argv[1]);
     nsources = atoi(argv[2]);
@@ -64,7 +66,7 @@ int main(const int argc, const char** argv) {
   Timer t;
   t.tic();
   for (long i = 0; i < repeat; i++) {
-    biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *gamma, Vec3d *dgamma_by_dphi, Vec3d *B);
+    biot_savart_B(ntargets, nsources, points, gamma, dgamma_by_dphi, B);
   }
   double tt = t.toc();
   printf("CPU time = %fs\n", tt);
