@@ -86,6 +86,41 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
     }
 }
 
+__global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *gamma, Vec3d *dgamma_by_dphi, Vec3d *B) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < num_points) {
+        // initialize
+        B[i].x  = 0.;
+        B[i].y  = 0.;
+        B[i].z  = 0.;
+        for (int tile = 0; tile < gridDim.x; tile++) {
+          // shared memory
+          __shared__ Vec3d share_gamma[BLOCK_SIZE];
+          __shared__ Vec3d share_dgamma_by_dphi[BLOCK_SIZE];
+	  share_gamma[threadIdx.x] = gamma[tile*blockDim.x + threadIdx.x];
+          share_dgamma_by_dphi[threadIdx.x] = dgamma_by_dphi[tile*blockDim.x + threadIdx.x];
+	  __syncthreads();
+
+	  // In block, compute B-S
+          for (int j = 0; j < BLOCK_SIZE; j++){
+            // compute the vector from target to source
+            double diff_x = points[i].x - share_gamma[j].x;
+            double diff_y = points[i].y - share_gamma[j].y;
+            double diff_z = points[i].z - share_gamma[j].z;
+            // compute distance between target and source
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double norm_diff = sqrt(distSqr);
+            double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
+            // compute cross product and reweight using distance
+            B[i].x += invDist3 * (share_dgamma_by_dphi[j].y * diff_z - share_dgamma_by_dphi[j].z * diff_y);
+            B[i].y += invDist3 * (share_dgamma_by_dphi[j].z * diff_x - share_dgamma_by_dphi[j].x * diff_z);
+            B[i].z += invDist3 * (share_dgamma_by_dphi[j].x * diff_y - share_dgamma_by_dphi[j].y * diff_x);
+    	  }
+	  __syncthreads();    
+        }
+    }
+}
+
 int main(const int argc, const char** argv) {
 
   // set values
@@ -107,6 +142,8 @@ int main(const int argc, const char** argv) {
   Vec3d *dgamma_by_dphi = (Vec3d*) malloc(bytes_sources);
   Vec3d *B = (Vec3d*) malloc(bytes_targets); // CPU computation
   Vec3d *B1 = (Vec3d*) malloc(bytes_targets); // GPU nosmem computation
+  Vec3d *B2 = (Vec3d*) malloc(bytes_targets); // GPU smem computation
+
   // GPU memory
   Vec3d *gpu_points, *gpu_gamma, *gpu_dgamma_by_dphi, *gpu_B;
   cudaMalloc(&gpu_points, bytes_targets);
@@ -138,7 +175,7 @@ int main(const int argc, const char** argv) {
   printf("CPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
   printf("CPU Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
  
-  // GPU computation
+  // GPU nonsmem computation
   cudaDeviceSynchronize();
   t.tic();
   for (long i = 0; i < repeat; i++) {
@@ -149,12 +186,29 @@ int main(const int argc, const char** argv) {
   printf("GPU no smem time = %fs\n", tt);
   printf("GPU no smem flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
   printf("GPU no smem Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+  cudaMemcpy(B1, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
+
+
+  // GPU computation
+  cudaDeviceSynchronize();
+  t.tic();
+  for (long i = 0; i < repeat; i++) {
+    GPU_biot_savart_B<<<nBlocks, BLOCK_SIZE>>>(ntargets, nsources, gpu_points, gpu_gamma, gpu_dgamma_by_dphi, gpu_B);
+  }
+  cudaDeviceSynchronize();
+  tt = t.toc();
+  printf("GPU time = %fs\n", tt);
+  printf("GPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
+  printf("GPU Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+  cudaMemcpy(B2, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
 
   // print error
-  cudaMemcpy(B1, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
-  double err_Inf = errorVec3d_LInf(B, B1, ntargets);
-  double err_2 = errorVec3d_L2(B, B1, ntargets);
-  printf("LInf Error = %e, L2 Error = %e\n", err_Inf, err_2);
+  double err_LInf_1 = errorVec3d_LInf(B, B1, ntargets);
+  double err_L2_1 = errorVec3d_L2(B, B1, ntargets);
+  printf("nosmem LInf Error = %e, L2 Error = %e\n", err_LInf_1, err_L2_1);
+  double err_LInf_2 = errorVec3d_LInf(B, B2, ntargets);
+  double err_L2_2 = errorVec3d_L2(B, B2, ntargets);
+  printf("LInf Error = %e, L2 Error = %e\n", err_LInf_2, err_L2_2);
 
   //// print some results
   //for (int i = 0; i < 10; i++){
@@ -167,6 +221,7 @@ int main(const int argc, const char** argv) {
   free(dgamma_by_dphi);
   free(B);
   free(B1);
+  free(B2);
   cudaFree(gpu_points);
   cudaFree(gpu_gamma);
   cudaFree(gpu_dgamma_by_dphi);
