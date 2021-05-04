@@ -42,9 +42,9 @@ void CPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d
     #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < num_points; i++) {
         // initialize
-        B[i].x = 0.;
-        B[i].y = 0.;
-        B[i].z = 0.;
+        double B_x = 0.;
+        double B_y = 0.;
+        double B_z = 0.;
         for (int j = 0; j < num_quad_points; j++) {
             // compute the vector from target to source (6 flop)
             double diff_x = points[i].x - gamma[j].x;
@@ -55,10 +55,11 @@ void CPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance (15 flop)
-            B[i].x += invDist3 * (dgamma_by_dphi[j].y * diff_z - dgamma_by_dphi[j].z * diff_y);
-            B[i].y += invDist3 * (dgamma_by_dphi[j].z * diff_x - dgamma_by_dphi[j].x * diff_z);
-            B[i].z += invDist3 * (dgamma_by_dphi[j].x * diff_y - dgamma_by_dphi[j].y * diff_x);
+            B_x += invDist3 * (dgamma_by_dphi[j].y * diff_z - dgamma_by_dphi[j].z * diff_y);
+            B_y += invDist3 * (dgamma_by_dphi[j].z * diff_x - dgamma_by_dphi[j].x * diff_z);
+            B_z += invDist3 * (dgamma_by_dphi[j].x * diff_y - dgamma_by_dphi[j].y * diff_x);
         }
+        B[i].x = B_x; B[i].y = B_y; B[i].z = B_z;
     }
 }
 
@@ -66,9 +67,9 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < num_points) {
         // initialize
-        B[i].x = 0.;
-        B[i].y = 0.;
-        B[i].z = 0.;
+        double B_x = 0.;
+        double B_y = 0.;
+        double B_z = 0.;
         for (int j = 0; j < num_quad_points; j++) {
             // compute the vector from target to source
             double diff_x = points[i].x - gamma[j].x;
@@ -79,10 +80,11 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance
-            B[i].x += invDist3 * (dgamma_by_dphi[j].y * diff_z - dgamma_by_dphi[j].z * diff_y);
-            B[i].y += invDist3 * (dgamma_by_dphi[j].z * diff_x - dgamma_by_dphi[j].x * diff_z);
-            B[i].z += invDist3 * (dgamma_by_dphi[j].x * diff_y - dgamma_by_dphi[j].y * diff_x);
+            B_x += invDist3 * (dgamma_by_dphi[j].y * diff_z - dgamma_by_dphi[j].z * diff_y);
+            B_y += invDist3 * (dgamma_by_dphi[j].z * diff_x - dgamma_by_dphi[j].x * diff_z);
+            B_z += invDist3 * (dgamma_by_dphi[j].x * diff_y - dgamma_by_dphi[j].y * diff_x);
         }
+	B[i].x = B_x; B[i].y = B_y; B[i].z = B_z;
     }
 }
 
@@ -90,9 +92,9 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < num_points) {
         // initialize
-        B[i].x  = 0.;
-        B[i].y  = 0.;
-        B[i].z  = 0.;
+        double B_x  = 0.;
+        double B_y  = 0.;
+        double B_z  = 0.;
         for (int tile = 0; tile < gridDim.x; tile++) {
           // shared memory
           __shared__ Vec3d share_gamma[BLOCK_SIZE];
@@ -112,12 +114,13 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance
-            B[i].x += invDist3 * (share_dgamma_by_dphi[j].y * diff_z - share_dgamma_by_dphi[j].z * diff_y);
-            B[i].y += invDist3 * (share_dgamma_by_dphi[j].z * diff_x - share_dgamma_by_dphi[j].x * diff_z);
-            B[i].z += invDist3 * (share_dgamma_by_dphi[j].x * diff_y - share_dgamma_by_dphi[j].y * diff_x);
+            B_x += invDist3 * (share_dgamma_by_dphi[j].y * diff_z - share_dgamma_by_dphi[j].z * diff_y);
+            B_y += invDist3 * (share_dgamma_by_dphi[j].z * diff_x - share_dgamma_by_dphi[j].x * diff_z);
+            B_z += invDist3 * (share_dgamma_by_dphi[j].x * diff_y - share_dgamma_by_dphi[j].y * diff_x);
     	  }
 	  __syncthreads();    
         }
+	B[i].x = B_x; B[i].y = B_y; B[i].z = B_z;
     }
 }
 
@@ -173,7 +176,7 @@ int main(const int argc, const char** argv) {
   double tt = t.toc();
   printf("CPU time = %fs\n", tt);
   printf("CPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
-  printf("CPU Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+  printf("CPU Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
  
   // GPU nonsmem computation
   cudaDeviceSynchronize();
@@ -185,7 +188,7 @@ int main(const int argc, const char** argv) {
   tt = t.toc();
   printf("GPU no smem time = %fs\n", tt);
   printf("GPU no smem flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
-  printf("GPU no smem Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+  printf("GPU no smem Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
   cudaMemcpy(B1, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
 
 
@@ -199,7 +202,7 @@ int main(const int argc, const char** argv) {
   tt = t.toc();
   printf("GPU time = %fs\n", tt);
   printf("GPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
-  printf("GPU Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+  printf("GPU Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
   cudaMemcpy(B2, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
 
   // print error
