@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <omp.h>
 #include "utils.h"
 
 #define rand01() ((double)rand()/RAND_MAX)
@@ -17,7 +18,7 @@ void randomizeVec3d(Vec3d *data, int n) {
   }
 }
 
-double errorVec3d(Vec3d *data1, Vec3d *data2, int n) {
+double errorVec3d_LInf(Vec3d *data1, Vec3d *data2, int n) {
   double err = 0.;
   for (int i = 0; i < n; i++) {
     err = std::max(err, fabs(data1[i].x -data2[i].x));
@@ -25,6 +26,16 @@ double errorVec3d(Vec3d *data1, Vec3d *data2, int n) {
     err = std::max(err, fabs(data1[i].z -data2[i].z));
   }
   return err;
+}
+
+double errorVec3d_L2(Vec3d *data1, Vec3d *data2, int n) {
+  double err = 0.;
+  for (int i = 0; i < n; i++) {
+    err += pow(data1[i].x -data2[i].x, 2);
+    err += pow(data1[i].y -data2[i].y, 2);
+    err += pow(data1[i].z -data2[i].z, 2);
+  }
+  return sqrt(err);
 }
 
 void CPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *gamma, Vec3d *dgamma_by_dphi, Vec3d *B) {
@@ -35,15 +46,15 @@ void CPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d
         B[i].y = 0.;
         B[i].z = 0.;
         for (int j = 0; j < num_quad_points; j++) {
-            // compute the vector from target to source
+            // compute the vector from target to source (6 flop)
             double diff_x = points[i].x - gamma[j].x;
             double diff_y = points[i].y - gamma[j].y;
             double diff_z = points[i].z - gamma[j].z;
-            // compute distance between target and source
+            // compute distance between target and source (9 flop)
             double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
-            // compute cross product and reweight using distance
+            // compute cross product and reweight using distance (15 flop)
             B[i].x += invDist3 * (dgamma_by_dphi[j].y * diff_z - dgamma_by_dphi[j].z * diff_y);
             B[i].y += invDist3 * (dgamma_by_dphi[j].z * diff_x - dgamma_by_dphi[j].x * diff_z);
             B[i].z += invDist3 * (dgamma_by_dphi[j].x * diff_y - dgamma_by_dphi[j].y * diff_x);
@@ -78,17 +89,18 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
 int main(const int argc, const char** argv) {
 
   // set values
-  int ntargets = 100;
-  int nsources = 200;
-  int repeat = 1;
-  if (argc > 2) {
+  long ntargets = 100;
+  long nsources = 200;
+  long repeat = 1;
+  if (argc > 3) {
     ntargets = atoi(argv[1]);
     nsources = atoi(argv[2]);
+    repeat = atoi(argv[3]);
   }
 
   // allocate memory
-  int bytes_targets = 3 * ntargets * sizeof(double);
-  int bytes_sources = 3 * nsources * sizeof(double);
+  long bytes_targets = 3 * ntargets * sizeof(double);
+  long bytes_sources = 3 * nsources * sizeof(double);
   // CPU memory
   Vec3d *points = (Vec3d*) malloc(bytes_targets);
   Vec3d *gamma = (Vec3d*) malloc(bytes_sources);
@@ -123,19 +135,31 @@ int main(const int argc, const char** argv) {
   }
   double tt = t.toc();
   printf("CPU time = %fs\n", tt);
-
+  printf("CPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
+  printf("CPU Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+ 
   // GPU computation
+  cudaDeviceSynchronize();
   t.tic();
   for (long i = 0; i < repeat; i++) {
     GPU_nosmem_biot_savart_B<<<nBlocks, BLOCK_SIZE>>>(ntargets, nsources, gpu_points, gpu_gamma, gpu_dgamma_by_dphi, gpu_B);   
   }
+  cudaDeviceSynchronize();
   tt = t.toc();
   printf("GPU no smem time = %fs\n", tt);
+  printf("GPU no smem flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
+  printf("GPU no smem Bandwidth = %3.3f GB/s\n", repeat*(3*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
 
   // print error
   cudaMemcpy(B1, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
-  double err = errorVec3d(B, B1, ntargets);
-  printf("Error = %e\n", err);
+  double err_Inf = errorVec3d_LInf(B, B1, ntargets);
+  double err_2 = errorVec3d_L2(B, B1, ntargets);
+  printf("LInf Error = %e, L2 Error = %e\n", err_Inf, err_2);
+
+  //// print some results
+  //for (int i = 0; i < 10; i++){
+  //  printf(" %e, %e | %e, %e | %e, %e\n", B[i].x, B1[i].x, B[i].y, B1[i].y, B[i].z, B1[i].z);
+  //}
 
   // free memory
   free(points);
