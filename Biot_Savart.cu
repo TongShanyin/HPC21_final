@@ -88,6 +88,7 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
     }
 }
 
+// GPU version, shared memory, 
 __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *gamma, Vec3d *dgamma_by_dphi, Vec3d *B) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < num_points) {
@@ -95,7 +96,8 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
         double B_x  = 0.;
         double B_y  = 0.;
         double B_z  = 0.;
-        for (int tile = 0; tile < gridDim.x; tile++) {
+	int nBlocks_sources = (num_quad_points + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        for (int tile = 0; tile < nBlocks_sources; tile++) {
           // shared memory
           __shared__ Vec3d share_gamma[BLOCK_SIZE];
           __shared__ Vec3d share_dgamma_by_dphi[BLOCK_SIZE];
