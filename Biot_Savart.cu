@@ -105,6 +105,7 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
 	  __syncthreads();
 
 	  // In block, compute B-S
+	  //#pragma unroll
           for (int j = 0; j < BLOCK_SIZE; j++){
             // compute the vector from target to source
             double diff_x = points[i].x - share_gamma[j].x;
@@ -130,15 +131,15 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
 int main(const int argc, const char** argv) {
 
   // set values
-  long ntargets = 100;
-  long nsources = 200;
+  long ntargets = BLOCK_SIZE*10;
+  long nsources = BLOCK_SIZE*10;
   long repeat = 1;
   if (argc > 3) {
     ntargets = atoi(argv[1]);
     nsources = atoi(argv[2]);
     repeat = atoi(argv[3]);
   }
-  if (argc == 2) {
+  if (argc == 3) {
     ntargets = atoi(argv[1]);
     nsources = atoi(argv[1]);
     repeat = atoi(argv[2]);
