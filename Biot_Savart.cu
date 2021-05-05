@@ -88,7 +88,7 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
     }
 }
 
-// GPU version, shared memory,ntargets & nsources are multiples of BLOCK_SIZE 
+// GPU version, shared memory,ntargets == nsources are multiples of BLOCK_SIZE 
 __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *gamma, Vec3d *dgamma_by_dphi, Vec3d *B) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < num_points) {
@@ -96,8 +96,7 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
         double B_x  = 0.;
         double B_y  = 0.;
         double B_z  = 0.;
-	int nBlocks_sources = (num_quad_points + BLOCK_SIZE - 1) / BLOCK_SIZE;
-        for (int tile = 0; tile < nBlocks_sources; tile++) {
+        for (int tile = 0; tile < gridDim.x; tile++) {
           // shared memory
           __shared__ Vec3d share_gamma[BLOCK_SIZE];
           __shared__ Vec3d share_dgamma_by_dphi[BLOCK_SIZE];
@@ -126,6 +125,8 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
     }
 }
 
+
+
 int main(const int argc, const char** argv) {
 
   // set values
@@ -137,7 +138,11 @@ int main(const int argc, const char** argv) {
     nsources = atoi(argv[2]);
     repeat = atoi(argv[3]);
   }
-
+  if (argc == 2) {
+    ntargets = atoi(argv[1]);
+    nsources = atoi(argv[1]);
+    repeat = atoi(argv[2]);
+  }
   // allocate memory
   long bytes_targets = 3 * ntargets * sizeof(double);
   long bytes_sources = 3 * nsources * sizeof(double);
@@ -146,8 +151,8 @@ int main(const int argc, const char** argv) {
   Vec3d *gamma = (Vec3d*) malloc(bytes_sources);
   Vec3d *dgamma_by_dphi = (Vec3d*) malloc(bytes_sources);
   Vec3d *B = (Vec3d*) malloc(bytes_targets); // CPU computation
-  Vec3d *B1 = (Vec3d*) malloc(bytes_targets); // GPU nosmem computation
-  Vec3d *B2 = (Vec3d*) malloc(bytes_targets); // GPU smem computation
+  Vec3d *B1 = (Vec3d*) malloc(bytes_targets); // GPU computation
+
 
   // GPU memory
   Vec3d *gpu_points, *gpu_gamma, *gpu_dgamma_by_dphi, *gpu_B;
@@ -187,33 +192,32 @@ int main(const int argc, const char** argv) {
     GPU_nosmem_biot_savart_B<<<nBlocks, BLOCK_SIZE>>>(ntargets, nsources, gpu_points, gpu_gamma, gpu_dgamma_by_dphi, gpu_B);   
   }
   cudaDeviceSynchronize();
-  tt = t.toc();
-  printf("GPU no smem time = %fs\n", tt);
-  printf("GPU no smem flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
-  printf("GPU no smem Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
+  double tt1 = t.toc();
+  printf("GPU no smem time = %fs\n", tt1);
+  printf("GPU no smem flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt1/1e9);
+  printf("GPU no smem Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt1 /1e9);
   cudaMemcpy(B1, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
+  double err_LInf_1 = errorVec3d_LInf(B, B1, ntargets);
+  double err_L2_1 = errorVec3d_L2(B, B1, ntargets);
+  printf("nosmem LInf Error = %e, L2 Error = %e\n", err_LInf_1, err_L2_1);
 
-
-  // GPU computation
+  // GPU computation with shared memory
   cudaDeviceSynchronize();
   t.tic();
   for (long i = 0; i < repeat; i++) {
     GPU_biot_savart_B<<<nBlocks, BLOCK_SIZE>>>(ntargets, nsources, gpu_points, gpu_gamma, gpu_dgamma_by_dphi, gpu_B);
   }
   cudaDeviceSynchronize();
-  tt = t.toc();
-  printf("GPU time = %fs\n", tt);
-  printf("GPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt/1e9);
-  printf("GPU Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt /1e9);
-  cudaMemcpy(B2, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
-
-  // print error
-  double err_LInf_1 = errorVec3d_LInf(B, B1, ntargets);
-  double err_L2_1 = errorVec3d_L2(B, B1, ntargets);
-  printf("nosmem LInf Error = %e, L2 Error = %e\n", err_LInf_1, err_L2_1);
-  double err_LInf_2 = errorVec3d_LInf(B, B2, ntargets);
-  double err_L2_2 = errorVec3d_L2(B, B2, ntargets);
+  double tt2 = t.toc();
+  printf("GPU time = %fs\n", tt2);
+  printf("GPU flops = %3.3f GFlop/s\n", repeat * 30*ntargets*nsources/tt2/1e9);
+  printf("GPU Bandwidth = %3.3f GB/s\n", repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt2 /1e9);
+  cudaMemcpy(B1, gpu_B, bytes_targets, cudaMemcpyDeviceToHost);
+  double err_LInf_2 = errorVec3d_LInf(B, B1, ntargets);
+  double err_L2_2 = errorVec3d_L2(B, B1, ntargets);
   printf("LInf Error = %e, L2 Error = %e\n", err_LInf_2, err_L2_2);
+
+
 
   //// print some results
   //for (int i = 0; i < 10; i++){
@@ -226,7 +230,6 @@ int main(const int argc, const char** argv) {
   free(dgamma_by_dphi);
   free(B);
   free(B1);
-  free(B2);
   cudaFree(gpu_points);
   cudaFree(gpu_gamma);
   cudaFree(gpu_dgamma_by_dphi);
