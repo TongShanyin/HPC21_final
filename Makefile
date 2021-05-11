@@ -16,7 +16,7 @@ TARGETS = $(basename $(wildcard *.cpp)) $(basename $(wildcard *.c)) $(basename $
 all : $(TARGETS)
 
 %:%.cpp
-	$(CXX) $(CXXFLAGS) $(CUDA_INCDIR) $< $(CUDA_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $< -o $@
 
 %:%.c
 	$(CXX) $(CXXFLAGS) $(CUDA_INCDIR) $< $(CUDA_LIBS) -o $@
