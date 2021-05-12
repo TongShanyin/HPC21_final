@@ -201,7 +201,7 @@ int main(const int argc, const char** argv) {
 
   // set values
   const long PFIRST = pow(2, 10);
-  const long PLAST = pow(2, 15);
+  const long PLAST = pow(2, 16);
   FILE * pFile;
   pFile = fopen ("data.txt","w");
 
@@ -306,7 +306,7 @@ for (long p = PFIRST; p <= PLAST; p *= 2) {
    }
   cudaDeviceSynchronize();
   double tt3 = t.toc();
-  double fp3 = repeat * 30*ntargets*nsources/tt3/1e9;
+  double fp3 = repeat * 29*ntargets*nsources/tt3/1e9;
   double bd3 = repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt3 /1e9;
   double err3 = errorVec3d_LInf(B, B1, ntargets);
 
@@ -325,7 +325,7 @@ for (long p = PFIRST; p <= PLAST; p *= 2) {
   }
   cudaDeviceSynchronize();
   double tt4 = t.toc();
-  double fp4 = repeat * 30*ntargets*nsources/tt4/1e9;
+  double fp4 = repeat * 29*ntargets*nsources/tt4/1e9;
   double bd4 = repeat*(2*bytes_targets+2*ntargets*bytes_sources)/ tt4 /1e9;
   double err4 = errorVec3d_LInf(B, B1, ntargets);
 
