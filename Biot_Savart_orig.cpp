@@ -27,7 +27,7 @@ void biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d *ga
             double diff_y = points[i].y - gamma[j].y;
             double diff_z = points[i].z - gamma[j].z;
             // compute distance between target and source
-            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z;
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance

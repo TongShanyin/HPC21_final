@@ -58,7 +58,7 @@ void CPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *points, Vec3d
             double diff_y = points[i].y - gamma[j].y;
             double diff_z = points[i].z - gamma[j].z;
             // compute distance between target and source (9 flop)
-            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z;
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance (15 flop)
@@ -83,7 +83,7 @@ __global__ void GPU_nosmem_biot_savart_B(int num_points, int num_quad_points, Ve
             double diff_y = points[i].y - gamma[j].y;
             double diff_z = points[i].z - gamma[j].z;
             // compute distance between target and source
-            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z;
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance
@@ -119,7 +119,7 @@ __global__ void GPU_biot_savart_B(int num_points, int num_quad_points, Vec3d *po
             double diff_y = points[i].y - share_gamma[j].y;
             double diff_z = points[i].z - share_gamma[j].z;
             // compute distance between target and source
-            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z;
             double norm_diff = sqrt(distSqr);
             double invDist3 = 1. / (norm_diff * norm_diff * norm_diff);
             // compute cross product and reweight using distance
@@ -147,7 +147,7 @@ __global__ void GPU_rsqrt_nosmem_biot_savart_B(int num_points, int num_quad_poin
             double diff_y = points[i].y - gamma[j].y;
             double diff_z = points[i].z - gamma[j].z;
             // compute distance between target and source
-            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z;
             double inv_norm_diff = rsqrt(distSqr);            
             double invDist3 = inv_norm_diff*inv_norm_diff*inv_norm_diff;
             // compute cross product and reweight using distance
@@ -183,7 +183,7 @@ __global__ void GPU_rsqrt_biot_savart_B(int num_points, int num_quad_points, Vec
             double diff_y = points[i].y - share_gamma[j].y;
             double diff_z = points[i].z - share_gamma[j].z;
             // compute distance between target and source
-            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_y*diff_y;
+            double distSqr = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z;
             double inv_norm_diff = rsqrt(distSqr);
             double invDist3 = inv_norm_diff*inv_norm_diff*inv_norm_diff;
             // compute cross product and reweight using distance
